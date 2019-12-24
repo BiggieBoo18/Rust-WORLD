@@ -19,7 +19,7 @@ impl CheapTrickOption {
     }
 }
 
-#[link(name = "cheaptrick.a")]
+#[link(name = "cheaptrick")]
 extern {
     pub fn CheapTrick(x:                  *const c_double,
                       x_length:           c_int,
@@ -57,7 +57,7 @@ impl DioOption {
     }
 }
 
-#[link(name = "dio.a")]
+#[link(name = "dio")]
 extern {
     pub fn Dio(x:                  *const c_double,
                x_length:           c_int,
