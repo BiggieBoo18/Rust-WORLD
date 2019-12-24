@@ -1,0 +1,3 @@
+[submodule "World"]
+	path = rsworld-sys/World
+	url = git@github.com:mmorise/World.git
