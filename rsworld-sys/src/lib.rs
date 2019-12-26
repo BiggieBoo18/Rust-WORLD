@@ -112,13 +112,17 @@ mod tests {
         unsafe {
             GetFFTSizeForCheapTrick(fs, &mut option as *mut _);
         }
-        // let mut sp = vec![vec![0.0; f0_length as usize]; (option.fft_size/2+1) as usize];
+	let xl = (option.fft_size/2+1) as usize;
+	let yl = f0_length as usize;
+	let mut spectrogram     = vec![vec![0.0; xl]; yl];
+	let mut spectrogram_ptr = spectrogram.iter_mut().map(|inner| inner.as_mut_ptr()).collect::<Vec<_>>();
+	let spectrogram_ptr = spectrogram_ptr.as_mut_ptr();
         unsafe {
-            let mut sp: *mut *mut f64 = libc::malloc(std::mem::size_of::<f64>()*f0_length as usize * (option.fft_size/2+1) as usize) as *mut *mut c_double;
-            println!("{:?}", get_type(sp));
-            CheapTrick(x.as_ptr(), x_length, fs, temporal_positions.as_ptr(), f0.as_ptr(), f0_length, &option as *const _, sp);
-            libc::free(sp as *mut libc::c_void);
+            CheapTrick(x.as_ptr(), x_length, fs, temporal_positions.as_ptr(), f0.as_ptr(), f0_length, &option as *const _, spectrogram_ptr);
         }
+	assert_eq!(spectrogram.len(), yl);
+	assert_eq!(spectrogram[0].len(), xl);
+	assert_eq!(spectrogram[0][0], 0.0000000000000000973637408614245);
     }
 
     // Dio test
