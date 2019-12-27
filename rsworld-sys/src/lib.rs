@@ -130,6 +130,39 @@ extern {
                             frame_period: c_double) -> c_int;
 }
 
+// Harvest
+#[repr(C)]
+#[derive(Debug, PartialEq)]
+pub struct HarvestOption {
+    pub f0_floor:     c_double,
+    pub f0_ceil:      c_double,
+    pub frame_period: c_double,
+}
+
+impl HarvestOption {
+    pub fn new() -> Self {
+        unsafe {
+            let mut option:HarvestOption = std::mem::MaybeUninit::uninit().assume_init();
+            InitializeHarvestOption(&mut option as *mut _);
+            option
+        }
+    }
+}
+
+#[link(name = "harvest")]
+extern {
+    pub fn Harvest(x:                  *const c_double,
+		   x_length:           c_int,
+		   fs:                 c_int,
+		   option:             *const HarvestOption,
+		   temporal_positions: *mut c_double,
+		   f0:                 *mut c_double);
+    pub fn InitializeHarvestOption(option: *mut HarvestOption);
+    pub fn GetSamplesForHarvest(fs:           c_int,
+				x_length:     c_int,
+				frame_period: c_double) -> c_int;
+}
+
 #[cfg(test)]
 mod tests {
     #[allow(dead_code)]
@@ -388,6 +421,45 @@ mod tests {
         unsafe {
             Dio(x.as_ptr(), x_length, fs, &option as *const _, temporal_positions.as_mut_ptr(), f0.as_mut_ptr());
         }
+        assert_eq!(temporal_positions, vec![0.0, 0.005]);
+        assert_eq!(f0,                 vec![0.0, 0.0]);
+    }
+
+    // Harvest test
+    use crate::{Harvest, GetSamplesForHarvest, HarvestOption};
+
+    #[test]
+    fn test_initalize_harvest_option() {
+	let option = HarvestOption::new();
+	assert_eq!(option, HarvestOption { f0_floor: 71.0, f0_ceil: 800.0, frame_period: 5.0 });
+    }
+
+    #[test]
+    fn test_get_samples_for_harvest() {
+	let fs           = 44100;
+	let x_length     = 256;
+	let frame_period = 5.0;
+	unsafe {
+	    let samples = GetSamplesForHarvest(fs, x_length, frame_period);
+	    assert_eq!(samples, 2);
+	}
+    }
+
+    #[test]
+    fn test_harvest() {
+        let x: Vec<f64> = vec![0.0; 256];
+        let x_length    = x.len() as i32;
+        let fs          = 44100;
+        let option      = HarvestOption::new();
+        let f0_length: usize;
+        unsafe {
+            f0_length = GetSamplesForHarvest(fs, x_length, option.frame_period) as usize;
+        }
+        let mut temporal_positions: Vec<f64> = vec![0.0; f0_length];
+        let mut f0: Vec<f64>                 = vec![0.0; f0_length];
+	unsafe {
+	    Harvest(x.as_ptr(), x_length, fs, &option as *const _, temporal_positions.as_mut_ptr(), f0.as_mut_ptr());
+	}
         assert_eq!(temporal_positions, vec![0.0, 0.005]);
         assert_eq!(f0,                 vec![0.0, 0.0]);
     }

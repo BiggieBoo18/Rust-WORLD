@@ -11,7 +11,10 @@ use rsworld_sys::{
     D4COption,
     Dio,
     GetSamplesForDIO,
-    DioOption
+    DioOption,
+    Harvest,
+    GetSamplesForHarvest,
+    HarvestOption,
 };
 
 pub fn cheaptrick(x: &Vec<f64>, fs: i32, temporal_positions: &Vec<f64>, f0: &Vec<f64>, option: &mut CheapTrickOption) -> Vec<Vec<f64>> {
@@ -115,6 +118,20 @@ pub fn dio(x: &Vec<f64>, fs: i32, option: &DioOption) -> (Vec<f64>, Vec<f64>) {
     (temporal_positions, f0)
 }
 
+pub fn harvest(x: &Vec<f64>, fs: i32, option: &HarvestOption) -> (Vec<f64>, Vec<f64>) {
+    let x_length = x.len() as i32;
+    let f0_length: usize;
+    unsafe {
+        f0_length = GetSamplesForHarvest(fs, x_length, option.frame_period) as usize;
+    }
+    let mut temporal_positions: Vec<f64> = vec![0.0; f0_length];
+    let mut f0:                 Vec<f64> = vec![0.0; f0_length];
+    unsafe {
+        Harvest(x.as_ptr(), x_length, fs, option as *const _, temporal_positions.as_mut_ptr(), f0.as_mut_ptr());
+    }
+    (temporal_positions, f0)
+}
+
 #[cfg(test)]
 mod tests {
     use crate::{cheaptrick,
@@ -127,7 +144,9 @@ mod tests {
 		d4c,
 		D4COption,
 		dio,
-		DioOption};
+		DioOption,
+		harvest,
+		HarvestOption};
 
     #[test]
     fn test_cheaptrick() {
@@ -229,6 +248,16 @@ mod tests {
         let fs = 44100;
         let option = DioOption::new();
         let (temporal_positions, f0) = dio(&x, fs, &option);
+        assert_eq!(temporal_positions, vec![0.0, 0.005]);
+        assert_eq!(f0,                 vec![0.0, 0.0]);
+    }
+
+    #[test]
+    fn test_harvest() {
+        let x  = vec![0.0; 256];
+        let fs = 44100;
+        let option = HarvestOption::new();
+        let (temporal_positions, f0) = harvest(&x, fs, &option);
         assert_eq!(temporal_positions, vec![0.0, 0.005]);
         assert_eq!(f0,                 vec![0.0, 0.0]);
     }
