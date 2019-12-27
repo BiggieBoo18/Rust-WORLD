@@ -19,9 +19,9 @@ fn main() {
     for file_name in &file_names {
         cc::Build::new()
 	    .cpp(true)
-            .warnings(true)
+            // .warnings(true)
             .flag("-O1")
-            .flag("-Wall")
+            .flag("-w")
             .file(&format!("{}/{}.cpp", world_src, file_name))
             .include(world_src)
             .compile(&format!("{}", file_name));
