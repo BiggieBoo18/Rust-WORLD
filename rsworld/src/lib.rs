@@ -15,6 +15,8 @@ use rsworld_sys::{
     Harvest,
     GetSamplesForHarvest,
     HarvestOption,
+    StoneMask,
+    Synthesis,
 };
 
 pub fn cheaptrick(x: &Vec<f64>, fs: i32, temporal_positions: &Vec<f64>, f0: &Vec<f64>, option: &mut CheapTrickOption) -> Vec<Vec<f64>> {
@@ -38,7 +40,12 @@ pub fn get_number_of_aperiodicities(fs: i32) -> i32 {
     }
 }
 
-pub fn code_aperiodicity(aperiodicity: &Vec<Vec<f64>>, f0_length: i32, fs: i32, fft_size: i32) -> Vec<Vec<f64>> {
+pub fn code_aperiodicity(aperiodicity: &Vec<Vec<f64>>, f0_length: i32, fs: i32) -> Vec<Vec<f64>> {
+    let mut cheaptrick_option = CheapTrickOption::new(fs);
+    unsafe {
+	GetFFTSizeForCheapTrick(fs, &mut cheaptrick_option as *mut _);
+    }
+    let fft_size  = cheaptrick_option.fft_size;
     let aperiodicity_ptr           = aperiodicity.iter().map(|inner| inner.as_ptr()).collect::<Vec<_>>();
     let aperiodicity_ptr           = aperiodicity_ptr.as_ptr();
     let n_aperiodicity;
@@ -54,7 +61,12 @@ pub fn code_aperiodicity(aperiodicity: &Vec<Vec<f64>>, f0_length: i32, fs: i32, 
     coded_aperiodicity
 }
 
-pub fn decode_aperiodicity(coded_aperiodicity: &Vec<Vec<f64>>, f0_length: i32, fs: i32, fft_size: i32) -> Vec<Vec<f64>> {
+pub fn decode_aperiodicity(coded_aperiodicity: &Vec<Vec<f64>>, f0_length: i32, fs: i32) -> Vec<Vec<f64>> {
+    let mut cheaptrick_option = CheapTrickOption::new(fs);
+    unsafe {
+	GetFFTSizeForCheapTrick(fs, &mut cheaptrick_option as *mut _);
+    }
+    let fft_size  = cheaptrick_option.fft_size;
     let coded_aperiodicity_ptr = coded_aperiodicity.iter().map(|inner| inner.as_ptr()).collect::<Vec<_>>();
     let coded_aperiodicity_ptr = coded_aperiodicity_ptr.as_ptr();
     let mut aperiodicity       = vec![vec![0.0; (fft_size/2+1) as usize]; f0_length as usize];
@@ -92,9 +104,14 @@ pub fn decode_spectral_envelope(coded_spectrogram: &Vec<Vec<f64>>, f0_length: i3
     spectrogram
 }
 
-pub fn d4c(x: &Vec<f64>, fs: i32, temporal_positions: &Vec<f64>, f0: &Vec<f64>, fft_size: i32, option: &D4COption) -> Vec<Vec<f64>> {
+pub fn d4c(x: &Vec<f64>, fs: i32, temporal_positions: &Vec<f64>, f0: &Vec<f64>, option: &D4COption) -> Vec<Vec<f64>> {
     let x_length  = x.len()  as i32;
     let f0_length = f0.len() as i32;
+    let mut cheaptrick_option = CheapTrickOption::new(fs);
+    unsafe {
+	GetFFTSizeForCheapTrick(fs, &mut cheaptrick_option as *mut _);
+    }
+    let fft_size  = cheaptrick_option.fft_size;
     let mut aperiodicity     = vec![vec![0.0; (fft_size/2+1) as usize]; f0_length as usize];
     let mut aperiodicity_ptr = aperiodicity.iter_mut().map(|inner| inner.as_mut_ptr()).collect::<Vec<_>>();
     let aperiodicity_ptr     = aperiodicity_ptr.as_mut_ptr();
@@ -132,21 +149,35 @@ pub fn harvest(x: &Vec<f64>, fs: i32, option: &HarvestOption) -> (Vec<f64>, Vec<
     (temporal_positions, f0)
 }
 
+pub fn stonemask(x: &Vec<f64>, fs: i32, temporal_positions: &Vec<f64>, f0: &Vec<f64>) -> Vec<f64> {
+    let x_length  = x.len() as i32;
+    let f0_length = f0.len();
+    let mut refined_f0 = vec![0.0; f0_length];
+    unsafe {
+	StoneMask(x.as_ptr(), x_length, fs, temporal_positions.as_ptr(), f0.as_ptr(), f0_length as i32, refined_f0.as_mut_ptr());
+    }
+    refined_f0
+}
+
+pub fn synthesis(f0: &Vec<f64>, spectrogram: &Vec<Vec<f64>>, aperiodicity: &Vec<Vec<f64>>, frame_period: f64, fs: i32) -> Vec<f64> {
+    let f0_length        = f0.len() as i32;
+    let spectrogram_ptr  = spectrogram.iter().map(|inner| inner.as_ptr()).collect::<Vec<_>>();
+    let spectrogram_ptr  = spectrogram_ptr.as_ptr();
+    let aperiodicity_ptr = aperiodicity.iter().map(|inner| inner.as_ptr()).collect::<Vec<_>>();
+    let aperiodicity_ptr = aperiodicity_ptr.as_ptr();
+    let fft_size         = (spectrogram[0].len()-1)*2;
+    let y_length         = f0_length * frame_period as i32 * fs / 1000;
+    let mut y            = vec![0.0; y_length as usize];
+    unsafe {
+	Synthesis(f0.as_ptr(), f0_length as i32, spectrogram_ptr, aperiodicity_ptr, fft_size as i32, frame_period, fs, y_length as i32, y.as_mut_ptr())
+    }
+    y
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::{cheaptrick,
-		CheapTrickOption,
-		get_number_of_aperiodicities,
-		code_aperiodicity,
-		decode_aperiodicity,
-		code_spectral_envelope,
-		decode_spectral_envelope,
-		d4c,
-		D4COption,
-		dio,
-		DioOption,
-		harvest,
-		HarvestOption};
+    // CheapTrick test
+    use crate::{cheaptrick, CheapTrickOption};
 
     #[test]
     fn test_cheaptrick() {
@@ -160,6 +191,15 @@ mod tests {
 	assert_eq!(spectrogram[0].len(), (option.fft_size/2+1) as usize);
     }
 
+    // Codec test
+    use crate::{
+	get_number_of_aperiodicities,
+	code_aperiodicity,
+	decode_aperiodicity,
+	code_spectral_envelope,
+	decode_spectral_envelope
+    };
+
     #[test]
     fn test_get_number_of_aperiodicities() {
 	let fs = 44100;
@@ -172,11 +212,10 @@ mod tests {
 	let fs                 = 44100 as i32;
         let temporal_positions = vec![0.0, 0.005];
         let f0                 = vec![0.0, 0.0];
-	let fft_size           = 2048 as i32;
 	let option             = D4COption::new();
 
-	let aperiodicity = d4c(&x, fs, &temporal_positions, &f0, fft_size, &option);
-	let coded_aperiodicity = code_aperiodicity(&aperiodicity, f0.len() as i32, fs, fft_size);
+	let aperiodicity = d4c(&x, fs, &temporal_positions, &f0, &option);
+	let coded_aperiodicity = code_aperiodicity(&aperiodicity, f0.len() as i32, fs);
 	assert_eq!(coded_aperiodicity.len(),    f0.len());
 	assert_eq!(coded_aperiodicity[0].len(), get_number_of_aperiodicities(fs) as usize);
     }
@@ -187,14 +226,13 @@ mod tests {
 	let fs                 = 44100 as i32;
         let temporal_positions = vec![0.0, 0.005];
         let f0                 = vec![0.0, 0.0];
-	let fft_size           = 2048 as i32;
 	let option             = D4COption::new();
 
-	let aperiodicity = d4c(&x, fs, &temporal_positions, &f0, fft_size, &option);
-	let coded_aperiodicity  = code_aperiodicity(&aperiodicity, f0.len() as i32, fs, fft_size);
-	let decode_aperiodicity = decode_aperiodicity(&coded_aperiodicity, f0.len() as i32, fs, fft_size);
+	let aperiodicity = d4c(&x, fs, &temporal_positions, &f0, &option);
+	let coded_aperiodicity  = code_aperiodicity(&aperiodicity, f0.len() as i32, fs);
+	let decode_aperiodicity = decode_aperiodicity(&coded_aperiodicity, f0.len() as i32, fs);
 	assert_eq!(aperiodicity.len(), f0.len());
-	assert_eq!(aperiodicity[0].len(), (fft_size/2+1) as usize);
+	assert_eq!(aperiodicity[0].len(), (2048/2+1) as usize);
 	assert_eq!(aperiodicity[0][0], 0.999999999999);
     }
 
@@ -227,20 +265,24 @@ mod tests {
 	assert_eq!(spectrogram[0].len(), (option.fft_size/2+1) as usize);
     }
 
+    // D4C test
+    use crate::{d4c, D4COption};
+
     #[test]
     fn test_d4c() {
 	let x                  = vec![0.0; 256];
 	let fs                 = 44100 as i32;
         let temporal_positions = vec![0.0, 0.005];
         let f0                 = vec![0.0, 0.0];
-	let fft_size           = 2048 as i32;
 	let option             = D4COption::new();
-
-	let aperiodicity = d4c(&x, fs, &temporal_positions, &f0, fft_size, &option);
+	let aperiodicity = d4c(&x, fs, &temporal_positions, &f0, &option);
 	assert_eq!(aperiodicity.len(), f0.len());
-	assert_eq!(aperiodicity[0].len(), (fft_size/2+1) as usize);
+	assert_eq!(aperiodicity[0].len(), (2048/2+1) as usize);
 	assert_eq!(aperiodicity[0][0], 0.999999999999);
     }
+
+    // DIO test
+    use crate::{dio, DioOption};
 
     #[test]
     fn test_dio() {
@@ -252,6 +294,9 @@ mod tests {
         assert_eq!(f0,                 vec![0.0, 0.0]);
     }
 
+    // Harvest test
+    use crate::{harvest, HarvestOption};
+
     #[test]
     fn test_harvest() {
         let x  = vec![0.0; 256];
@@ -260,5 +305,38 @@ mod tests {
         let (temporal_positions, f0) = harvest(&x, fs, &option);
         assert_eq!(temporal_positions, vec![0.0, 0.005]);
         assert_eq!(f0,                 vec![0.0, 0.0]);
+    }
+
+    // StoneMask test
+    use crate::stonemask;
+
+    #[test]
+    fn test_stonemask() {
+        let x  = vec![0.0; 256];
+        let fs = 44100;
+        let option = DioOption::new();
+        let (temporal_positions, f0) = dio(&x, fs, &option);
+	let refined_f0 = stonemask(&x, fs, &temporal_positions, &f0);
+	assert_eq!(refined_f0, vec![0.0, 0.0]);
+    }
+
+    // Synthesis test
+    use crate::synthesis;
+
+    #[test]
+    fn test_synthesis() {
+        let x      = vec![0.0; 256];
+        let fs     = 44100;
+        let option = DioOption::new();
+        let (temporal_positions, f0) = dio(&x, fs, &option);
+	let frame_period = option.frame_period;
+	let f0           = stonemask(&x, fs, &temporal_positions, &f0);
+	let mut option   = CheapTrickOption::new(fs);
+	let spectrogram  = cheaptrick(&x, fs, &temporal_positions, &f0, &mut option);
+	let option       = D4COption::new();
+	let aperiodicity = d4c(&x, fs, &temporal_positions, &f0, &option);
+	let y            = synthesis(&f0, &spectrogram, &aperiodicity, frame_period, fs);
+	let y_length     = f0.len() as i32 * frame_period as i32 * fs / 1000;
+	assert_eq!(y.len(), y_length as usize);
     }
 }

@@ -163,6 +163,32 @@ extern {
 				frame_period: c_double) -> c_int;
 }
 
+// StoneMask
+#[link(name = "stonemask")]
+extern {
+    pub fn StoneMask(x:                  *const c_double,
+		     x_length:           c_int,
+		     fs:                 c_int,
+		     temporal_positions: *const c_double,
+		     f0:                 *const c_double,
+		     f0_length:          c_int,
+		     refined_f0:         *mut c_double);
+}
+
+// Synthesis
+#[link(name = "synthesis")]
+extern {
+    pub fn Synthesis(f0:           *const c_double,
+		     f0_length:    c_int,
+		     spectrogram:  *const *const c_double,
+		     aperiodicity: *const *const c_double,
+		     fft_size:     c_int,
+		     frame_period: c_double,
+		     fs:           c_int,
+		     y_length:     c_int,
+		     y:            *mut c_double);
+}
+
 #[cfg(test)]
 mod tests {
     #[allow(dead_code)]
@@ -189,8 +215,6 @@ mod tests {
             assert_eq!(option.fft_size, 2048);
         }
     }
-
-    use std::os::raw::{c_double};
 
     #[test]
     fn test_cheaptrick() {
@@ -462,5 +486,83 @@ mod tests {
 	}
         assert_eq!(temporal_positions, vec![0.0, 0.005]);
         assert_eq!(f0,                 vec![0.0, 0.0]);
+    }
+
+    // StoneMask test
+    use crate::StoneMask;
+
+    #[test]
+    fn test_stonemask() {
+        let x: Vec<f64> = vec![0.0; 256];
+        let x_length    = x.len() as i32;
+        let fs          = 44100;
+        let option      = DioOption::new();
+        let f0_length: usize;
+        unsafe {
+            f0_length = GetSamplesForDIO(fs, x_length, option.frame_period) as usize;
+        }
+        let mut temporal_positions: Vec<f64> = vec![0.0; f0_length];
+        let mut f0: Vec<f64>                 = vec![0.0; f0_length];
+        unsafe {
+            Dio(x.as_ptr(), x_length, fs, &option as *const _, temporal_positions.as_mut_ptr(), f0.as_mut_ptr());
+        }
+	let mut refined_f0 = vec![0.0; f0_length];
+	unsafe {
+	    StoneMask(x.as_ptr(), x_length, fs, temporal_positions.as_ptr(), f0.as_ptr(), f0_length as i32, refined_f0.as_mut_ptr());
+	}
+	assert_eq!(refined_f0, vec![0.0, 0.0]);
+    }
+
+    // Synthesis test
+    use crate::Synthesis;
+
+    #[test]
+    fn test_synthesis() {
+        let x: Vec<f64> = vec![0.0; 256];
+        let x_length    = x.len() as i32;
+        let fs          = 44100;
+        let option      = DioOption::new();
+        let f0_length: usize;
+        unsafe {
+            f0_length = GetSamplesForDIO(fs, x_length, option.frame_period) as usize;
+        }
+	let frame_period = option.frame_period;
+        let mut temporal_positions: Vec<f64> = vec![0.0; f0_length];
+        let mut f0: Vec<f64>                 = vec![0.0; f0_length];
+        unsafe {
+            Dio(x.as_ptr(), x_length, fs, &option as *const _, temporal_positions.as_mut_ptr(), f0.as_mut_ptr());
+	}
+
+        let mut option         = CheapTrickOption::new(fs);
+        unsafe {
+            GetFFTSizeForCheapTrick(fs, &mut option as *mut _);
+        }
+	let xl = (option.fft_size/2+1) as usize;
+	let yl = f0_length as usize;
+	let mut spectrogram     = vec![vec![0.0; xl]; yl];
+	let mut spectrogram_ptr = spectrogram.iter_mut().map(|inner| inner.as_mut_ptr()).collect::<Vec<_>>();
+	let spectrogram_ptr = spectrogram_ptr.as_mut_ptr();
+        unsafe {
+            CheapTrick(x.as_ptr(), x_length, fs, temporal_positions.as_ptr(), f0.as_ptr(), f0_length as i32, &option as *const _, spectrogram_ptr);
+        }
+	let fft_size             = option.fft_size;
+	let option               = D4COption::new();
+	let mut aperiodicity     = vec![vec![0.0; (fft_size/2+1) as usize]; f0_length as usize];
+	let mut aperiodicity_ptr = aperiodicity.iter_mut().map(|inner| inner.as_mut_ptr()).collect::<Vec<_>>();
+	let aperiodicity_ptr     = aperiodicity_ptr.as_mut_ptr();
+	unsafe {
+	    D4C(x.as_ptr(), x_length, fs, temporal_positions.as_ptr(), f0.as_ptr(), f0_length as i32, fft_size, &option as *const _, aperiodicity_ptr);
+	}
+
+	let spectrogram_ptr = spectrogram.iter().map(|inner| inner.as_ptr()).collect::<Vec<_>>();
+	let spectrogram_ptr = spectrogram_ptr.as_ptr();
+	let aperiodicity_ptr = aperiodicity.iter().map(|inner| inner.as_ptr()).collect::<Vec<_>>();
+	let aperiodicity_ptr     = aperiodicity_ptr.as_ptr();
+	let y_length = f0_length as i32 * frame_period as i32 * fs as i32 / 1000;
+	let mut y        = vec![0.0; y_length as usize];
+	unsafe {
+	    Synthesis(f0.as_ptr(), f0_length as i32, spectrogram_ptr, aperiodicity_ptr, fft_size, frame_period, fs, y_length as i32, y.as_mut_ptr())
+	}
+	assert_eq!(y.len(), y_length as usize);
     }
 }
