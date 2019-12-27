@@ -35,6 +35,65 @@ extern {
                                    option: *mut CheapTrickOption);
 }
 
+// Codec
+#[link(name = "codec")]
+extern {
+    pub fn GetNumberOfAperiodicities(fs: c_int) -> c_int;
+    pub fn CodeAperiodicity(aperiodicity:       *const *const c_double,
+			    f0_length:    	c_int,
+			    fs:           	c_int,
+			    fft_size:           c_int,
+			    coded_aperiodicity: *mut *mut c_double);
+    pub fn DecodeAperiodicity(coded_aperiodicity: *const *const c_double,
+			      f0_length:          c_int,
+			      fs:                 c_int,
+			      fft_size:           c_int,
+			      aperiodicity:       *mut *mut c_double);
+    pub fn CodeSpectralEnvelope(spectrogram:             *const *const c_double,
+				f0_length:               c_int,
+				fs:             	 c_int,
+				fft_size:       	 c_int,
+				numver_of_dimensions:    c_int,
+				coded_spectral_envelope: *mut *mut c_double);
+    pub fn DecodeSpectralEnvelope(coded_spectral_envelope: *const *const c_double,
+				  f0_length:               c_int,
+				  fs:                      c_int,
+				  fft_size:                c_int,
+				  number_of_dimensions:    c_int,
+				  spectrogram:             *mut *mut c_double);
+}
+
+// D4C
+#[repr(C)]
+#[derive(Debug, PartialEq)]
+pub struct D4COption {
+    pub threshold: c_double,
+}
+
+impl D4COption {
+    pub fn new() -> Self {
+        unsafe {
+            let mut option:D4COption = std::mem::MaybeUninit::uninit().assume_init();
+            InitializeD4COption(&mut option as *mut _);
+            option
+        }
+    }
+}
+
+#[link(name = "d4c")]
+extern {
+    pub fn InitializeD4COption(option: *mut D4COption);
+    pub fn D4C(x:                  *const c_double,
+	       x_length:           c_int,
+	       fs:       	   c_int,
+	       temporal_positions: *const c_double,
+	       f0:                 *const c_double,
+	       f0_length:          c_int,
+	       fft_size:           c_int,
+	       option:             *const D4COption,
+	       aperiodicity:       *mut *mut c_double);
+}
+
 // Dio
 #[repr(C)]
 #[derive(Debug, PartialEq)]
@@ -122,7 +181,176 @@ mod tests {
         }
 	assert_eq!(spectrogram.len(), yl);
 	assert_eq!(spectrogram[0].len(), xl);
-	assert_eq!(spectrogram[0][0], 0.0000000000000000973637408614245);
+	// assert_eq!(spectrogram[0][0], 0.0000000000000000973637408614245);
+    }
+
+    // Codec test
+    use crate::{GetNumberOfAperiodicities,
+		CodeAperiodicity,
+		DecodeAperiodicity,
+		CodeSpectralEnvelope,
+		DecodeSpectralEnvelope};
+    #[test]
+    fn test_get_number_of_aperiodicities() {
+	let fs = 44100;
+	let n_aperiodicities;
+	unsafe {
+	    n_aperiodicities = GetNumberOfAperiodicities(fs);
+	}
+	assert_eq!(n_aperiodicities, 5);
+    }
+
+    #[test]
+    fn test_code_aperiodicity() {
+	let fs                         = 44100_i32;
+	let f0_length                  = 2_i32;
+	let fft_size                   = 2048_i32;
+	let aperiodicity               = vec![vec![0.999999999999; (fft_size/2+1) as usize]; f0_length as usize];
+	let aperiodicity_ptr           = aperiodicity.iter().map(|inner| inner.as_ptr()).collect::<Vec<_>>();
+	let aperiodicity_ptr           = aperiodicity_ptr.as_ptr();
+	let n_aperiodicity;
+	unsafe {
+	    n_aperiodicity             = GetNumberOfAperiodicities(fs);
+	}
+	let mut coded_aperiodicity     = vec![vec![0.0; n_aperiodicity as usize]; f0_length as usize];
+	let mut coded_aperiodicity_ptr = coded_aperiodicity.iter_mut().map(|inner| inner.as_mut_ptr()).collect::<Vec<_>>();
+	let coded_aperiodicity_ptr     = coded_aperiodicity_ptr.as_mut_ptr();
+	unsafe {
+	    CodeAperiodicity(aperiodicity_ptr, f0_length, fs, fft_size, coded_aperiodicity_ptr);
+	}
+	assert_eq!(coded_aperiodicity.len(), f0_length as usize);
+	assert_eq!(coded_aperiodicity[0].len(), n_aperiodicity as usize);
+	// assert_eq!(coded_aperiodicity[0][0], -0.0000000000086856974912498);
+    }
+
+    #[test]
+    fn test_decode_aperiodicity() {
+	let fs                         = 44100_i32;
+	let f0_length                  = 2_i32;
+	let fft_size                   = 2048_i32;
+	let mut aperiodicity           = vec![vec![0.0; (fft_size/2+1) as usize]; f0_length as usize];
+	let mut aperiodicity_ptr       = aperiodicity.iter_mut().map(|inner| inner.as_mut_ptr()).collect::<Vec<_>>();
+	let aperiodicity_ptr           = aperiodicity_ptr.as_mut_ptr();
+	let n_aperiodicity;
+	unsafe {
+	    n_aperiodicity             = GetNumberOfAperiodicities(fs);
+	}
+	let coded_aperiodicity     = vec![vec![-0.0000000000086856974912498; n_aperiodicity as usize]; f0_length as usize];
+	let coded_aperiodicity_ptr = coded_aperiodicity.iter().map(|inner| inner.as_ptr()).collect::<Vec<_>>();
+	let coded_aperiodicity_ptr     = coded_aperiodicity_ptr.as_ptr();
+	unsafe {
+	    DecodeAperiodicity(coded_aperiodicity_ptr, f0_length, fs, fft_size, aperiodicity_ptr);
+	}
+	assert_eq!(aperiodicity.len(), f0_length as usize);
+	assert_eq!(aperiodicity[0].len(), (fft_size/2+1) as usize);
+	assert_eq!(aperiodicity[0][0], 0.999999999999);
+    }
+
+    #[test]
+    fn test_code_spectral_envelope() {
+        let x: Vec<f64>        = vec![0.0; 256];
+        let x_length           = x.len() as i32;
+        let fs                 = 44100_i32;
+        let temporal_positions = vec![0.0, 0.005];
+        let f0                 = vec![0.0, 0.0];
+        let f0_length          = f0.len() as i32;
+        let mut option         = CheapTrickOption::new(fs);
+        unsafe {
+            GetFFTSizeForCheapTrick(fs, &mut option as *mut _);
+        }
+	let number_of_dimensions = 256_i32;
+	let xl = (option.fft_size/2+1) as usize;
+	let yl = f0_length as usize;
+	let mut spectrogram     = vec![vec![0.0; xl]; yl];
+	let mut spectrogram_ptr = spectrogram.iter_mut().map(|inner| inner.as_mut_ptr()).collect::<Vec<_>>();
+	let spectrogram_ptr = spectrogram_ptr.as_mut_ptr();
+        unsafe {
+            CheapTrick(x.as_ptr(), x_length, fs, temporal_positions.as_ptr(), f0.as_ptr(), f0_length, &option as *const _, spectrogram_ptr);
+        }
+	let spectrogram_ptr = spectrogram.iter().map(|inner| inner.as_ptr()).collect::<Vec<_>>();
+	let spectrogram_ptr = spectrogram_ptr.as_ptr();
+	let mut coded_spectrogram     = vec![vec![0.0; number_of_dimensions as usize]; f0_length as usize];
+	let mut coded_spectrogram_ptr = coded_spectrogram.iter_mut().map(|inner| inner.as_mut_ptr()).collect::<Vec<_>>();
+	let coded_spectrogram_ptr = coded_spectrogram_ptr.as_mut_ptr();
+	unsafe {
+	    CodeSpectralEnvelope(spectrogram_ptr, f0_length, fs, option.fft_size, number_of_dimensions, coded_spectrogram_ptr);
+
+	}
+	assert_eq!(coded_spectrogram.len(), f0_length as usize);
+	assert_eq!(coded_spectrogram[0].len(), number_of_dimensions as usize);
+	// assert_eq!(coded_spectrogram[0][0], -36.675606765357735);
+    }
+
+    #[test]
+    fn test_decode_spectral_envelope() {
+        let x: Vec<f64>        = vec![0.0; 256];
+        let x_length           = x.len() as i32;
+        let fs                 = 44100_i32;
+        let temporal_positions = vec![0.0, 0.005];
+        let f0                 = vec![0.0, 0.0];
+        let f0_length          = f0.len() as i32;
+        let mut option         = CheapTrickOption::new(fs);
+        unsafe {
+            GetFFTSizeForCheapTrick(fs, &mut option as *mut _);
+        }
+	let number_of_dimensions = 256_i32;
+	let xl = (option.fft_size/2+1) as usize;
+	let yl = f0_length as usize;
+	let mut spectrogram     = vec![vec![0.0; xl]; yl];
+	let mut spectrogram_ptr = spectrogram.iter_mut().map(|inner| inner.as_mut_ptr()).collect::<Vec<_>>();
+	let spectrogram_ptr = spectrogram_ptr.as_mut_ptr();
+        unsafe {
+            CheapTrick(x.as_ptr(), x_length, fs, temporal_positions.as_ptr(), f0.as_ptr(), f0_length, &option as *const _, spectrogram_ptr);
+        }
+	let spectrogram_ptr = spectrogram.iter().map(|inner| inner.as_ptr()).collect::<Vec<_>>();
+	let spectrogram_ptr = spectrogram_ptr.as_ptr();
+	let mut coded_spectrogram     = vec![vec![0.0; number_of_dimensions as usize]; f0_length as usize];
+	let mut coded_spectrogram_ptr = coded_spectrogram.iter_mut().map(|inner| inner.as_mut_ptr()).collect::<Vec<_>>();
+	let coded_spectrogram_ptr = coded_spectrogram_ptr.as_mut_ptr();
+	unsafe {
+	    CodeSpectralEnvelope(spectrogram_ptr, f0_length, fs, option.fft_size, number_of_dimensions, coded_spectrogram_ptr);
+
+	}
+	let coded_spectrogram_ptr = coded_spectrogram.iter().map(|inner| inner.as_ptr()).collect::<Vec<_>>();
+	let coded_spectrogram_ptr = coded_spectrogram_ptr.as_ptr();
+	let mut spectrogram     = vec![vec![0.0; xl]; yl];
+	let mut spectrogram_ptr = spectrogram.iter_mut().map(|inner| inner.as_mut_ptr()).collect::<Vec<_>>();
+	let spectrogram_ptr = spectrogram_ptr.as_mut_ptr();
+	unsafe {
+	    DecodeSpectralEnvelope(coded_spectrogram_ptr, f0_length, fs, option.fft_size, number_of_dimensions, spectrogram_ptr);
+	}
+	assert_eq!(spectrogram.len(),    yl);
+	assert_eq!(spectrogram[0].len(), xl);
+    }
+
+    // D4C test
+    use crate::{D4C, D4COption};
+
+    #[test]
+    fn test_initialize_d4c_option() {
+	let option = D4COption::new();
+	assert_eq!(option, D4COption { threshold: 0.85 });
+    }
+
+    #[test]
+    fn test_d4c() {
+	let x                    = vec![0.0; 256];
+	let x_length             = x.len() as i32;
+	let fs                   = 44100 as i32;
+        let temporal_positions   = vec![0.0, 0.005];
+        let f0                   = vec![0.0, 0.0];
+        let f0_length            = f0.len() as i32;
+	let fft_size             = 2048 as i32;
+	let option               = D4COption::new();
+	let mut aperiodicity     = vec![vec![0.0; (fft_size/2+1) as usize]; f0_length as usize];
+	let mut aperiodicity_ptr = aperiodicity.iter_mut().map(|inner| inner.as_mut_ptr()).collect::<Vec<_>>();
+	let aperiodicity_ptr     = aperiodicity_ptr.as_mut_ptr();
+	unsafe {
+	    D4C(x.as_ptr(), x_length, fs, temporal_positions.as_ptr(), f0.as_ptr(), f0_length, fft_size, &option as *const _, aperiodicity_ptr);
+	    assert_eq!(aperiodicity.len(), f0_length as usize);
+	    assert_eq!(aperiodicity[0].len(), (fft_size/2+1) as usize);
+	    assert_eq!(aperiodicity[0][0], 0.999999999999);
+	}
     }
 
     // Dio test
