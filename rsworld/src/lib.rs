@@ -231,9 +231,9 @@ mod tests {
 	let aperiodicity = d4c(&x, fs, &temporal_positions, &f0, &option);
 	let coded_aperiodicity  = code_aperiodicity(&aperiodicity, f0.len() as i32, fs);
 	let decode_aperiodicity = decode_aperiodicity(&coded_aperiodicity, f0.len() as i32, fs);
-	assert_eq!(aperiodicity.len(), f0.len());
-	assert_eq!(aperiodicity[0].len(), (2048/2+1) as usize);
-	assert_eq!(aperiodicity[0][0], 0.999999999999);
+	assert_eq!(decode_aperiodicity.len(), f0.len());
+	assert_eq!(decode_aperiodicity[0].len(), (2048/2+1) as usize);
+	assert_eq!(decode_aperiodicity[0][0], 0.999999999999);
     }
 
     #[test]

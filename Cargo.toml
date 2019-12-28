@@ -1,3 +1,15 @@
+[package]
+name    = "Rust-WORLD"
+version = "0.1.0"
+authors = ["BiggieBoo18"]
+edition = "2018"
+
+license = "MIT"
+description = "Rust-World is a WORLD(https://github.com/mmorise/World) wrapper for Rust. "
+repository = "https://github.com/BiggieBoo18/Rust-WORLD"
+readme = "README.md"
+keywords = ["Rust-WORLD", "WORLD", "world", "vocoder"]
+
 [workspace]
 members = [
         "rsworld",
