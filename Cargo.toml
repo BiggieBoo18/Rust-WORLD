@@ -10,6 +10,10 @@ repository = "https://github.com/BiggieBoo18/Rust-WORLD"
 readme = "README.md"
 keywords = ["Rust-WORLD", "WORLD", "world", "vocoder"]
 
+[dependencies]
+rsworld-sys = {path = "rsworld-sys"}
+rsworld     = {path = "rsworld"}
+
 [workspace]
 members = [
         "rsworld",
